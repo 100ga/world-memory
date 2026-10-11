@@ -10,24 +10,45 @@ const { Scheduler } = util;
 // The labels HIGH/MODERATE/LOW are ASSUMPTIONS, not measured similarity levels.
 // Every list has 15 study words. HIGH: 15 school-related words; MODERATE: 10 school-related
 // + 5 unrelated; LOW: 15 unrelated words. The never-presented critical lure is 학교 (none for LOW).
-// No new foils are tested (foils: []); add words there to test unrelated new items.
+// Memory test (15 items, the SAME words for every participant):
+//   studied   = 8 words from the study list (positions 1, 3, 5, ... 15)
+//   related   = school-related words that were never presented (the critical lure 학교 included)
+//   unrelated = new words unrelated to any list
 const BLOCKS = [
   { condition: 'HIGH', topic: 'school', lure: '학교',
     study: ['수업', '급식', '담임', '숙제', '졸업', '시험', '칠판', '선생',
             '국어', '소풍', '반장', '과제', '성적', '청소', '분필'],
-    foils: [] },
+    test: { studied: ['수업', '담임', '졸업', '칠판', '국어', '반장', '성적', '분필'],
+            related: ['수행', '조회', '야자'],
+            unrelated: ['국자', '굴뚝', '저울'] } },
   { condition: 'MODERATE', topic: 'school_mixed', lure: '학교',
     study: ['동창', '출석', '복도', '가방', '지각', '필기', '입시', '독서',
             '정문', '후배', '풍선', '팽이', '철사', '편지', '자석'],
-    foils: [] },
+    test: { studied: ['동창', '복도', '지각', '입시', '정문', '풍선', '철사', '자석'],
+            related: ['사회', '미술', '역사'],
+            unrelated: ['시계', '달력', '연탄'] } },
   { condition: 'LOW', topic: 'unrelated', lure: '',
     study: ['열쇠', '깃발', '리본', '성냥', '도장', '간판', '밧줄', '석탄',
             '화살', '대문', '촛불', '분수', '궁궐', '필름', '잉크'],
-    foils: [] },
+    test: { studied: ['열쇠', '리본', '도장', '밧줄', '화살', '촛불', '궁궐', '잉크'],
+            related: [],
+            unrelated: ['액자', '안경', '벨트', '면봉', '수건', '골목', '나사'] } },
 ];
+// true: the 15 test words appear in a new random order for each participant; false: as listed above.
+const SHUFFLE_TEST_ORDER = true;
+
+// Fail loudly while testing if a test list is inconsistent with the study lists.
+const STUDY_WORDS = new Set(BLOCKS.flatMap((b) => b.study));
+const NEW_WORDS = BLOCKS.flatMap((b) => [b.lure, ...b.test.related, ...b.test.unrelated].filter(Boolean));
+for (const b of BLOCKS) {
+  const wrong = b.test.studied.filter((w) => !b.study.includes(w));
+  if (wrong.length) throw new Error(`${b.condition}: studied test words not in its study list: ${wrong}`);
+}
+const reused = NEW_WORDS.filter((w) => STUDY_WORDS.has(w));
+if (reused.length) throw new Error(`New test words that were actually studied: ${reused}`);
 const STUDY_SECONDS = 1.5;
 const BLANK_SECONDS = 0.5;
-const DISTRACTOR_SECONDS = 30;
+const PROBLEMS_TO_SOLVE = 5;  // distractor task ends once this many additions are answered correctly
 const RATING_KEYS = ['1', '2', '3', '4', 'num_1', 'num_2', 'num_3', 'num_4'];
 
 // Results are sent to DataPipe (https://pipe.jspsych.org), which stores them in your Google Drive.
@@ -41,7 +62,7 @@ const FIELDS = ['participant', 'block', 'condition', 'topic', 'critical_lure', '
 
 // Where to send the participant after they click OK on the final message ('' = stay on the page).
 // {participant} is replaced with the participant ID, e.g. to pre-fill a Google Form question.
-const COMPLETION_URL = '';  // after finishing the whole experiment
+const COMPLETION_URL = 'https://forms.gle/1KuzfJnmT6U1dCEW8';  // after finishing the whole experiment
 const EXIT_URL = '';        // after quitting early with ESC
 
 const expName = 'english_three_level_pilot';
@@ -224,13 +245,11 @@ function* getKey(allowed) {
 }
 
 function* arithmetic(blockNum, block) {
-  show('계산 과제\n\n덧셈 문제를 풀어 주세요.',
+  show(`계산 과제\n\n덧셈 문제 ${PROBLEMS_TO_SOLVE}개를 풀어 주세요.`,
        '정답을 입력해야 다음 문제로 넘어갑니다. 숫자를 입력하고 Enter를 누르세요. 시작하려면 스페이스바를 누르세요.');
   yield* getKey(['space']);
   const overall = new util.Clock();
-  let number = 0;
-  while (overall.getTime() < DISTRACTOR_SECONDS) {
-    number += 1;
+  for (let number = 1; number <= PROBLEMS_TO_SOLVE; number++) {
     const a = randint(10, 49);
     const b = randint(10, 49);
     const correctAnswer = a + b;
@@ -241,12 +260,11 @@ function* arithmetic(blockNum, block) {
     typedKeys.length = 0;
     let solved = false;
 
-    while (overall.getTime() < DISTRACTOR_SECONDS && !solved) {
-      const remaining = Math.max(0, Math.floor(DISTRACTOR_SECONDS - overall.getTime() + 0.999));
+    while (!solved) {
       const feedback = overall.getTime() < feedbackUntil
         ? '틀렸습니다. 다시 입력해 주세요!' : '정답을 입력해야 다음 문제로 넘어갑니다.';
       show(`${a} + ${b} = ?\n\n입력한 답: ${typed || '_'}`,
-           `${feedback}\nEnter: 제출   Backspace: 지우기   남은 시간 ${remaining}초`);
+           `${feedback}\nEnter: 제출   Backspace: 지우기   ${number} / ${PROBLEMS_TO_SOLVE}번째 문제`);
 
       // event.key is '0'-'9' for both the top row and the numpad, and 'Enter' for both Enter keys.
       for (const key of typedKeys.splice(0)) {
@@ -283,6 +301,16 @@ function* arithmetic(blockNum, block) {
   psychoJS.eventManager.clearEvents();  // drop the typing keys PsychoJS buffered meanwhile
 }
 
+function buildTest(block) {
+  const items = [
+    ...block.test.studied.map((w) => [w, 'studied']),
+    ...(block.lure ? [[block.lure, 'critical_lure']] : []),
+    ...block.test.related.map((w) => [w, 'related_new']),
+    ...block.test.unrelated.map((w) => [w, 'unrelated_new']),
+  ];
+  return SHUFFLE_TEST_ORDER ? shuffle(items) : items;
+}
+
 function* experiment() {
   show('단어 기억 실험\n\n'
        + '짧은 단어 목록을 외운 뒤, 덧셈 문제를 풀고, 기억 검사를 하게 됩니다.\n\n'
@@ -309,12 +337,7 @@ function* experiment() {
          + '1 = 확실히 있었다    2 = 아마 있었다\n'
          + '3 = 아마 없었다      4 = 확실히 없었다', '시작하려면 스페이스바를 누르세요.');
     yield* getKey(['space']);
-    // Four old words, the critical lure (if the list has one) and any unrelated new foils.
-    const tests = shuffle([
-      ...shuffle(block.study).slice(0, 4).map((w) => [w, 'studied']),
-      ...(block.lure ? [[block.lure, 'critical_lure']] : []),
-      ...block.foils.map((w) => [w, 'unrelated_foil']),
-    ]);
+    const tests = buildTest(block);
     for (const [i, [word, kind]] of tests.entries()) {
       show(word, '1 확실히 있었다     2 아마 있었다\n3 아마 없었다       4 확실히 없었다');
       const clock = new util.Clock();
