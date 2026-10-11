@@ -1,29 +1,36 @@
 /*
  * Three-level semantic-similarity false-memory pilot: PsychoJS (online) version.
  * Port of english_three_level_pilot.py so it can run on Pavlovia.
- * NOT validated experimental stimuli. Two blocks: one HIGH, one LOW; exploratory demo only.
+ * NOT validated experimental stimuli. Three blocks: one HIGH, one MODERATE, one LOW; exploratory demo only.
  */
 import { core, util, visual } from 'https://lib.pavlovia.org/psychojs-2026.2.4.js';
 const { PsychoJS } = core;
 const { Scheduler } = util;
 
-// The labels HIGH/LOW are ASSUMPTIONS, not measured similarity levels.
-// Every list has 8 study words, a never-presented critical lure and 2 new foils.
-// Each condition has different topics; this demo DOES NOT control topic confounds.
+// The labels HIGH/MODERATE/LOW are ASSUMPTIONS, not measured similarity levels.
+// Every list has 15 study words. HIGH: 15 school-related words; MODERATE: 10 school-related
+// + 5 unrelated; LOW: 15 unrelated words. The never-presented critical lure is 학교 (none for LOW).
+// No new foils are tested (foils: []); add words there to test unrelated new items.
 const BLOCKS = [
-  { condition: 'HIGH', topic: 'sleep', lure: 'SLEEP',
-    study: ['BED', 'PILLOW', 'DREAM', 'TIRED', 'NAP', 'BLANKET', 'REST', 'DROWSY'],
-    foils: ['CARROT', 'BRIDGE'] },
-  { condition: 'LOW', topic: 'garden', lure: 'GARDEN',
-    study: ['PHONE', 'COFFEE', 'RIVER', 'JACKET', 'WINDOW', 'MUSIC', 'TICKET', 'CLOCK'],
-    foils: ['PENCIL', 'AIRPLANE'] },
+  { condition: 'HIGH', topic: 'school', lure: '학교',
+    study: ['수업', '급식', '담임', '숙제', '졸업', '시험', '칠판', '선생',
+            '국어', '소풍', '반장', '과제', '성적', '청소', '분필'],
+    foils: [] },
+  { condition: 'MODERATE', topic: 'school_mixed', lure: '학교',
+    study: ['동창', '출석', '복도', '가방', '지각', '필기', '입시', '독서',
+            '정문', '후배', '풍선', '팽이', '철사', '편지', '자석'],
+    foils: [] },
+  { condition: 'LOW', topic: 'unrelated', lure: '',
+    study: ['열쇠', '깃발', '리본', '성냥', '도장', '간판', '밧줄', '석탄',
+            '화살', '대문', '촛불', '분수', '궁궐', '필름', '잉크'],
+    foils: [] },
 ];
 const STUDY_SECONDS = 1.5;
 const BLANK_SECONDS = 0.5;
 const DISTRACTOR_SECONDS = 30;
 const RATING_KEYS = ['1', '2', '3', '4', 'num_1', 'num_2', 'num_3', 'num_4'];
 
-// Results are sent to DataPipe (https://pipe.jspsych.org), which stores them in your OSF project.
+// Results are sent to DataPipe (https://pipe.jspsych.org), which stores them in your Google Drive.
 // Paste the Experiment ID from the DataPipe dashboard here. While it is empty (test mode),
 // the CSV is downloaded to this computer instead.
 const DATAPIPE_EXPERIMENT_ID = 'AE4LxxByJ6qP';
@@ -31,6 +38,11 @@ const DATAPIPE_URL = 'https://pipe.jspsych.org/api/data/';
 const FIELDS = ['participant', 'block', 'condition', 'topic', 'critical_lure', 'phase',
                 'trial', 'word_or_problem', 'item_type', 'correct_answer', 'typed_answer',
                 'is_correct', 'rating_1to4', 'said_seen', 'confidence', 'rt_seconds'];
+
+// Where to send the participant after they click OK on the final message ('' = stay on the page).
+// {participant} is replaced with the participant ID, e.g. to pre-fill a Google Form question.
+const COMPLETION_URL = '';  // after finishing the whole experiment
+const EXIT_URL = '';        // after quitting early with ESC
 
 const expName = 'english_three_level_pilot';
 // participant can also be passed in the URL, e.g. ...?participant=P01
@@ -43,7 +55,7 @@ const rows = [];
 const psychoJS = new PsychoJS({ debug: false, saveResults: false });
 psychoJS.openWindow({ fullscr: true, color: new util.Color('black'), units: 'height', waitBlanking: true });
 
-psychoJS.schedule(psychoJS.gui.DlgFromDict({ dictionary: expInfo, title: expName }));
+psychoJS.schedule(psychoJS.gui.DlgFromDict({ dictionary: expInfo, title: '단어 기억 실험' }));
 const flowScheduler = new Scheduler(psychoJS);
 const dialogCancelScheduler = new Scheduler(psychoJS);
 psychoJS.scheduleCondition(() => psychoJS.gui.dialogComponent.button === 'OK',
@@ -88,19 +100,25 @@ function runFrame() {
 // (FLIP_NEXT would end the nested flowScheduler, so repeat with FLIP_REPEAT instead.)
 let savingFrames = 0;
 function showSaving() {
-  if (savingFrames === 0) show('Saving your responses...\n\nPlease do not close this window.');
+  if (savingFrames === 0) show('응답을 저장하고 있습니다...\n\n창을 닫지 마세요.');
   savingFrames += 1;
   return savingFrames > 2 ? Scheduler.Event.NEXT : Scheduler.Event.FLIP_REPEAT;
 }
 
+function redirectUrl(template) {
+  return template ? template.replace(/\{participant\}/g, encodeURIComponent(expInfo.participant)) : undefined;
+}
+
 async function finish(isCompleted) {
   const { filename, result } = await saveData();
-  const thanks = isCompleted ? 'Thank you for participating!' : 'You exited early.';
+  // PsychoJS follows these when the participant clicks OK on the final message.
+  psychoJS.setRedirectUrls(redirectUrl(COMPLETION_URL), redirectUrl(EXIT_URL));
+  const thanks = isCompleted ? '참여해 주셔서 감사합니다!' : '실험을 중간에 종료했습니다.';
   const messages = {
-    sent: `${thanks} Your responses have been saved.`,
-    test: `TEST MODE (no DataPipe ID set): the results were downloaded as ${filename}.`,
-    failed: `${thanks} Online saving failed, so the results were downloaded as ${filename}. `
-            + 'Please send this file to the researcher.',
+    sent: `${thanks} 응답이 저장되었습니다.`,
+    test: `테스트 모드(DataPipe ID 없음): 결과가 ${filename} 파일로 다운로드되었습니다.`,
+    failed: `${thanks} 온라인 저장에 실패하여 결과가 ${filename} 파일로 다운로드되었습니다. `
+            + '이 파일을 연구자에게 보내 주세요.',
   };
   return quit(messages[result], isCompleted);
 }
@@ -206,8 +224,8 @@ function* getKey(allowed) {
 }
 
 function* arithmetic(blockNum, block) {
-  show('ARITHMETIC TASK\n\nSolve each addition problem.',
-       'Only CORRECT answers advance. Type digits and press ENTER. SPACE to start.');
+  show('계산 과제\n\n덧셈 문제를 풀어 주세요.',
+       '정답을 입력해야 다음 문제로 넘어갑니다. 숫자를 입력하고 Enter를 누르세요. 시작하려면 스페이스바를 누르세요.');
   yield* getKey(['space']);
   const overall = new util.Clock();
   let number = 0;
@@ -226,9 +244,9 @@ function* arithmetic(blockNum, block) {
     while (overall.getTime() < DISTRACTOR_SECONDS && !solved) {
       const remaining = Math.max(0, Math.floor(DISTRACTOR_SECONDS - overall.getTime() + 0.999));
       const feedback = overall.getTime() < feedbackUntil
-        ? 'Incorrect. Try again!' : 'Only a correct answer moves to the next problem.';
-      show(`${a} + ${b} = ?\n\nYour answer: ${typed || '_'}`,
-           `${feedback}\nENTER: submit   BACKSPACE: delete   ${remaining}s left`);
+        ? '틀렸습니다. 다시 입력해 주세요!' : '정답을 입력해야 다음 문제로 넘어갑니다.';
+      show(`${a} + ${b} = ?\n\n입력한 답: ${typed || '_'}`,
+           `${feedback}\nEnter: 제출   Backspace: 지우기   남은 시간 ${remaining}초`);
 
       // event.key is '0'-'9' for both the top row and the numpad, and 'Enter' for both Enter keys.
       for (const key of typedKeys.splice(0)) {
@@ -266,18 +284,18 @@ function* arithmetic(blockNum, block) {
 }
 
 function* experiment() {
-  show('THREE-LEVEL SEMANTIC SIMILARITY PILOT\n\n'
-       + 'You will study short word lists, solve arithmetic problems, and take memory tests.\n\n'
-       + 'Some test words were NOT presented. Respond based on what you actually remember.',
-       'Press SPACE to begin. ESC saves available data and exits.');
+  show('단어 기억 실험\n\n'
+       + '짧은 단어 목록을 외운 뒤, 덧셈 문제를 풀고, 기억 검사를 하게 됩니다.\n\n'
+       + '검사에는 보여 드리지 않은 단어도 나옵니다. 실제로 기억나는 대로 답해 주세요.',
+       '시작하려면 스페이스바를 누르세요. ESC를 누르면 그때까지의 응답을 저장하고 종료합니다.');
   yield* getKey(['space']);
 
-  // One block per condition (HIGH, LOW); shuffle order for this DEMO.
+  // One block per condition (HIGH, MODERATE, LOW); shuffle order for this DEMO.
   const blocks = shuffle(BLOCKS);
   for (const [index, block] of blocks.entries()) {
     const blockNum = index + 1;
-    show(`BLOCK ${blockNum} OF ${blocks.length}\n\nRemember the following words.`,
-         'Press SPACE to begin.');
+    show(`${blocks.length}개 중 ${blockNum}번째 세트\n\n이제 나오는 단어들을 기억해 주세요.`,
+         '시작하려면 스페이스바를 누르세요.');
     yield* getKey(['space']);
     for (const word of block.study) {
       show(word);
@@ -287,18 +305,18 @@ function* experiment() {
     }
 
     yield* arithmetic(blockNum, block);
-    show('MEMORY TEST\n\nWas each word in the list you JUST studied?\n\n'
-         + '1 = Definitely YES    2 = Probably YES\n'
-         + '3 = Probably NO       4 = Definitely NO', 'Press SPACE to begin.');
+    show('기억 검사\n\n각 단어가 방금 외운 목록에 있었나요?\n\n'
+         + '1 = 확실히 있었다    2 = 아마 있었다\n'
+         + '3 = 아마 없었다      4 = 확실히 없었다', '시작하려면 스페이스바를 누르세요.');
     yield* getKey(['space']);
-    // Four old words, one critical lure and two unrelated new foils per block.
+    // Four old words, the critical lure (if the list has one) and any unrelated new foils.
     const tests = shuffle([
       ...shuffle(block.study).slice(0, 4).map((w) => [w, 'studied']),
-      [block.lure, 'critical_lure'],
+      ...(block.lure ? [[block.lure, 'critical_lure']] : []),
       ...block.foils.map((w) => [w, 'unrelated_foil']),
     ]);
     for (const [i, [word, kind]] of tests.entries()) {
-      show(word, '1 Definitely YES     2 Probably YES\n3 Probably NO        4 Definitely NO');
+      show(word, '1 확실히 있었다     2 아마 있었다\n3 아마 없었다       4 확실히 없었다');
       const clock = new util.Clock();
       const key = yield* getKey(RATING_KEYS);
       const rt = clock.getTime();
@@ -317,7 +335,7 @@ function* experiment() {
     }
   }
 
-  show('PILOT COMPLETE!\n\nThank you for participating.',
-       'Press SPACE to save your results and exit.');
+  show('실험이 끝났습니다!\n\n참여해 주셔서 감사합니다.',
+       '스페이스바를 누르면 결과를 저장하고 종료합니다.');
   yield* getKey(['space']);
 }
