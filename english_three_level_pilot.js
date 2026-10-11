@@ -62,7 +62,8 @@ const FIELDS = ['participant', 'block', 'condition', 'topic', 'critical_lure', '
 
 // Where to send the participant after they click OK on the final message ('' = stay on the page).
 // {participant} is replaced with the participant ID, e.g. to pre-fill a Google Form question.
-const COMPLETION_URL = 'https://forms.gle/1KuzfJnmT6U1dCEW8';  // after finishing the whole experiment
+const COMPLETION_URL =  // follow-up form; the participant-number question is pre-filled
+  'https://docs.google.com/forms/d/e/1FAIpQLSczfJNJT6Fw7zQqBxkEiXn6dIdXkglVfDotr_Ol4qLX8Si2tQ/viewform?usp=pp_url&entry.1881614587={participant}';
 const EXIT_URL = '';        // after quitting early with ESC
 
 const expName = 'english_three_level_pilot';
@@ -221,6 +222,8 @@ function shuffle(items) {
 // reports it. Typed answers are therefore read straight from the browser's keydown events.
 const typedKeys = [];
 window.addEventListener('keydown', (event) => {
+  // Text fields (e.g. the participant box in the start dialog) must keep their normal editing keys.
+  if (event.target.closest && event.target.closest('input, textarea, select, [contenteditable]')) return;
   if (event.key === 'Backspace') event.preventDefault();  // never let it trigger "go back"
   typedKeys.push(event.key);
 });
