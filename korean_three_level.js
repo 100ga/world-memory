@@ -9,7 +9,7 @@
  * 설계 근거: experiment_design_v1.md
  */
 import { core, util, visual } from 'https://lib.pavlovia.org/psychojs-2026.2.4.js';
-import { SETS, UNRELATED } from './stimuli.js?v=20261016b';   // 자극 파일을 다시 만들면 v 값을 바꿔 캐시를 무효화
+import { SETS, UNRELATED } from './stimuli.js?v=20261016c';   // 자극 파일을 다시 만들면 v 값을 바꿔 캐시를 무효화
 const { PsychoJS } = core;
 const { Scheduler } = util;
 
