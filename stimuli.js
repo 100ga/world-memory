@@ -1,4 +1,4 @@
-// 자동 생성: python make_stimuli_js.py (원본 stimuli_sets_v0.4.csv, unrelated_pool_v0.4.csv). 손으로 고치지 말 것.
+// 자동 생성: python make_stimuli_js.py (원본 stimuli_sets_v0.5.csv, unrelated_pool_v0.4.csv). 손으로 고치지 말 것.
 // SETS: 유인어 1개당 강(high) 10 / 약(mid) 10. UNRELATED: 무관 학습 목록·검사 foil 공용 풀.
 export const SETS = [
   {
@@ -15,7 +15,12 @@ export const SETS = [
       "강당",
       "졸업",
       "실습",
-      "선생"
+      "선생",
+      "소풍",
+      "시험",
+      "원서",
+      "조례",
+      "반장"
     ],
     "mid": [
       "모형",
@@ -44,7 +49,12 @@ export const SETS = [
       "우유",
       "녹차",
       "와인",
-      "식수"
+      "소주",
+      "식수",
+      "소다",
+      "시럽",
+      "밀크",
+      "설탕"
     ],
     "mid": [
       "클럽",
@@ -66,12 +76,17 @@ export const SETS = [
     "high": [
       "외과",
       "진료",
+      "의료",
       "치과",
       "환자",
       "내과",
+      "간호",
       "의대",
       "수술",
+      "약국",
+      "의사",
       "응급",
+      "치료",
       "처방",
       "주사"
     ],

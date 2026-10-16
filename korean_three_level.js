@@ -1,22 +1,28 @@
 /*
- * 한국어 의미 관련성 3수준 오기억 실험 — PsychoJS(온라인) 버전.
+ * 한국어 의미 관련성 오기억 실험 — PsychoJS(온라인) 버전.
  * 기존 english_three_level_pilot.js(학교 1세트 데모)의 흐름을 유지하되,
  *   - 자극을 stimuli.js(본실험_단어셋_v1 에서 생성)로 분리
- *   - 유인어 고정·조건 회전: 참가자마다 각 유인어를 강/약/무관 중 한 조건에서만 만나고, 참가자 번호 % 3 으로 회전(라틴 방격)
+ *   - DESIGN 상수로 설계 선택: 기본 'themes_plus_unrelated' = 주제 목록 3개(학교·음료·병원) + 무관 목록 1개, 블록 4개
+ *     ('latin_square' = 유인어 고정·조건 회전, 블록 3개)
  *   - 블록당 학습 10단어, 산수(최소 문제 수 + 최소 시간), 재인 검사 old 5 + new 5(유인어 1 + 무관 foil 4), 4점 확신 + RT
  *   - 참가자 ID로 무선화를 재현(seed)할 수 있음
  * 설계 근거: experiment_design_v1.md
  */
 import { core, util, visual } from 'https://lib.pavlovia.org/psychojs-2026.2.4.js';
-import { SETS, UNRELATED } from './stimuli.js';
+import { SETS, UNRELATED } from './stimuli.js?v=20261016b';   // 자극 파일을 다시 만들면 v 값을 바꿔 캐시를 무효화
 const { PsychoJS } = core;
 const { Scheduler } = util;
 
 // ---------- 설정 ----------
-const INCLUDE_SPARE = false;        // true: 예비 세트(가구)도 블록으로 포함 (참가자 내 조건 수가 2/1/1 로 불균형해짐, 참가자 간에는 균형)
-const LIST_LEN = 10;                // 블록당 학습 단어 수
-const N_OLD_TEST = 5;               // 검사 old 수 (학습 순서 1,3,5,7,9번째)
-const N_FOILS = 4;                  // 검사 무관 foil 수 (+ 유인어 1 = new 5)
+// DESIGN
+//  'themes_plus_unrelated' : 모든 참가자가 주제 목록 3개(학교·음료·병원, 각 강 15단어)와 무관 목록 1개(무관 풀 15단어)를 본다 → 블록 4개, 순서 무선.
+//                            검사 = old 8 + new 8 (주제 블록: 유인어 1 + 무관 foil 7 / 무관 블록: 무관 풀 새 단어 8). 비교: 주제 블록 유인어 오인률 vs 무관 블록 새 단어·모든 블록 foil 오경보율.
+//  'latin_square'          : 유인어 고정·조건 회전(참가자 번호 % 3 으로 각 유인어를 강/약/무관 중 하나에 배정) → 블록 3개. experiment_design_v1.md 안. (약 목록은 10개뿐이라 LIST_LEN 10 으로 낮춰야 함)
+const DESIGN = 'themes_plus_unrelated';
+const INCLUDE_SPARE = false;        // latin_square 에서만: 예비 세트(가구)도 블록으로 포함
+const LIST_LEN = 15;                // 블록당 학습 단어 수 (기존 실험과 같이 15)
+const N_OLD_TEST = 8;               // 검사 old 수 (학습 순서 1,3,5,…,15번째 — 기존 실험과 같음)
+const N_FOILS = 7;                  // 검사 무관 foil 수 (+ 유인어 1 = new 8 → old 8 : new 8)
 // ?quick=1 : 동작 점검용(제시 0.3초, 산수 2문제·3초). 본실험에서는 붙이지 말 것.
 const QUICK = new URLSearchParams(window.location.search).get('quick') === '1';
 const STUDY_SECONDS = QUICK ? 0.3 : 1.5;
@@ -38,7 +44,7 @@ const DATAPIPE_URL = 'https://pipe.jspsych.org/api/data/';
 const COMPLETION_URL =
   'https://docs.google.com/forms/d/e/1FAIpQLSczfJNJT6Fw7zQqBxkEiXn6dIdXkglVfDotr_Ol4qLX8Si2tQ/viewform?usp=pp_url&entry.1881614587={participant}';
 const EXIT_URL = '';
-const FIELDS = ['participant', 'version', 'block', 'set_id', 'critical_lure', 'condition', 'phase',
+const FIELDS = ['participant', 'version', 'design', 'block', 'set_id', 'critical_lure', 'condition', 'phase',
                 'trial', 'word_or_problem', 'item_type', 'study_position', 'correct_answer', 'typed_answer',
                 'is_correct', 'rating_1to4', 'said_seen', 'confidence', 'rt_seconds'];
 
@@ -79,39 +85,55 @@ function versionOf(participant) {
   return Number.isInteger(n) && n > 0 ? (n - 1) % 3 : hashString(String(participant)) % 3;
 }
 
-// 세션 구성: 블록 목록 (유인어마다 조건 1개, 무관 학습 목록·foil 은 공용 풀에서 중복 없이)
+// 세션 구성: 블록 목록 (무관 학습 목록·foil 은 공용 풀에서 참가자마다 중복 없이)
 function buildSession(participant) {
   rng = mulberry32(hashString(`k3l:${participant}`));
   const version = versionOf(participant);
-  const sets = SETS.filter((s) => s.role === 'main' || INCLUDE_SPARE);
   const pool = shuffle(UNRELATED);
   let cursor = 0;
   const take = (n) => { const out = pool.slice(cursor, cursor + n); cursor += n; if (out.length < n) throw new Error('무관 풀 부족'); return out; };
-  let blocks = sets.map((s, i) => {
-    const condition = CONDITIONS[(i + version) % 3];
+  const makeBlock = (s, condition) => {
     const study = shuffle(condition === 'unrelated' ? take(LIST_LEN) : s[condition].slice(0, LIST_LEN));
-    const oldIdx = [1, 3, 5, 7, 9].slice(0, N_OLD_TEST);          // 학습 순서 기준 위치(0-based)
+    const oldIdx = [0, 2, 4, 6, 8, 10, 12, 14].slice(0, N_OLD_TEST);   // 학습 순서 1,3,5,…번째(0-based 짝수) — 기존 실험과 같음
+    const unrelatedBlock = condition === 'unrelated';   // 무관 블록: 유인어 없음, new 는 전부 무관 풀 단어
     const test = [
       ...oldIdx.map((k) => ({ word: study[k], kind: 'studied', pos: k + 1 })),
-      { word: s.lure, kind: 'critical_lure', pos: '' },
-      ...take(N_FOILS).map((w) => ({ word: w, kind: 'unrelated_foil', pos: '' })),
+      ...(unrelatedBlock ? [] : [{ word: s.lure, kind: 'critical_lure', pos: '' }]),
+      ...take(N_FOILS + (unrelatedBlock ? 1 : 0)).map((w) => ({ word: w, kind: 'unrelated_foil', pos: '' })),
     ];
-    return { set_id: s.set_id, lure: s.lure, condition, study, test: SHUFFLE_TEST_ORDER ? shuffle(test) : test };
-  });
-  // 블록 순서: 같은 조건 3연속 금지
-  for (let tries = 0; tries < 500; tries++) {
-    const order = shuffle(blocks);
-    let ok = true, run = 1;
-    for (let i = 1; i < order.length; i++) { run = order[i].condition === order[i - 1].condition ? run + 1 : 1; if (run > 2) ok = false; }
-    if (ok) { blocks = order; break; }
+    return { set_id: unrelatedBlock ? 0 : s.set_id, lure: unrelatedBlock ? '' : s.lure, condition, study, test: SHUFFLE_TEST_ORDER ? shuffle(test) : test };
+  };
+  let blocks;
+  if (DESIGN === 'themes_plus_unrelated') {
+    const mains = SETS.filter((s) => s.role === 'main');
+    blocks = [...mains.map((s) => makeBlock(s, 'high')), makeBlock(mains[0], 'unrelated')];
+  } else {
+    const sets = SETS.filter((s) => s.role === 'main' || INCLUDE_SPARE);
+    blocks = sets.map((s, i) => makeBlock(s, CONDITIONS[(i + version) % 3]));
   }
-  return { version, blocks };
+  // 블록 순서: 같은 조건 3연속 금지
+  if (DESIGN === 'themes_plus_unrelated') {
+    blocks = shuffle(blocks);                  // 4블록 순서 무선 (무관 블록 위치도 무선 → 분석에서 block 열로 순서 효과 확인)
+  } else {
+    for (let tries = 0; tries < 500; tries++) {
+      const order = shuffle(blocks);
+      let ok = true, run = 1;
+      for (let i = 1; i < order.length; i++) { run = order[i].condition === order[i - 1].condition ? run + 1 : 1; if (run > 2) ok = false; }
+      if (ok) { blocks = order; break; }
+    }
+  }
+  // 한 세션 안에서 학습·검사에 쓰인 단어는 모두 유일해야 한다(세트 간·무관 풀 겹침, 중복 추출 방지)
+  const used = blocks.flatMap((b) => [...b.study, ...b.test.filter((x) => x.kind !== 'studied').map((x) => x.word)]);   // old 문항은 학습 단어와 같으므로 제외
+  const dup = used.filter((w, i) => used.indexOf(w) !== i);
+  if (dup.length) throw new Error(`세션 안에 중복 단어: ${[...new Set(dup)].join(', ')}`);
+  return { version, design: DESIGN, blocks };
 }
 
 // 무결성 검사(세트 간 중복·무관 풀 겹침)는 make_stimuli_js.py 가 보장; 여기서는 길이만 확인
 for (const s of SETS) {
-  if (s.high.length < LIST_LEN || s.mid.length < LIST_LEN) throw new Error(`${s.lure}: 강/약 단어가 ${LIST_LEN}개 미만`);
+  if (s.role === 'main' && s.high.length < LIST_LEN) throw new Error(`${s.lure}: 강 단어가 ${LIST_LEN}개 미만`);
 }
+if (UNRELATED.length < LIST_LEN + N_FOILS * (SETS.length + 1)) throw new Error('무관 풀이 학습 목록 + foil 수보다 작음');
 
 // ---------- PsychoJS ----------
 const expName = 'korean_three_level';
@@ -225,7 +247,7 @@ function* getKey(allowed) {
 }
 
 function baseRow(block, blockNum, phase) {
-  return { participant: expInfo.participant, version: session.version, block: blockNum, set_id: block.set_id,
+  return { participant: expInfo.participant, version: session.version, design: session.design, block: blockNum, set_id: block.set_id,
            critical_lure: block.lure, condition: block.condition, phase };
 }
 
